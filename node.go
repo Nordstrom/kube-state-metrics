@@ -17,6 +17,9 @@ limitations under the License.
 package main
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/context"
@@ -37,6 +40,7 @@ var (
 			"container_runtime_version",
 			"kubelet_version",
 			"kubeproxy_version",
+			"kubernetes_labels",
 		}, nil,
 	)
 
@@ -153,11 +157,22 @@ func (nc *nodeCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
+func (nc *nodeCollector) joinLabels(m map[string]string) string {
+	labels := make([]string, 0, len(m))
+	for k := range m {
+		labels = append(labels, fmt.Sprintf("%s=%s", k, m[k]))
+	}
+	return strings.Join(labels, ",")
+}
+
 func (nc *nodeCollector) collectNode(ch chan<- prometheus.Metric, n v1.Node) {
 	addGauge := func(desc *prometheus.Desc, v float64, lv ...string) {
 		lv = append([]string{n.Name}, lv...)
 		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, v, lv...)
 	}
+	// create a labels string by joining all the node's labels with commas
+	labels := nc.joinLabels(n.ObjectMeta.Labels)
+
 	// NOTE: the instrumentation API requires providing label values in order of declaration
 	// in the metric descriptor. Be careful when making modifications.
 	addGauge(descNodeInfo, 1,
@@ -166,6 +181,7 @@ func (nc *nodeCollector) collectNode(ch chan<- prometheus.Metric, n v1.Node) {
 		n.Status.NodeInfo.ContainerRuntimeVersion,
 		n.Status.NodeInfo.KubeletVersion,
 		n.Status.NodeInfo.KubeProxyVersion,
+		labels,
 	)
 
 	addGauge(descNodeSpecUnschedulable, boolFloat64(n.Spec.Unschedulable))
